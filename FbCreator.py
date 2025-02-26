@@ -5,6 +5,8 @@ import random
 import string
 import json
 import hashlib
+import time
+import re
 from faker import Faker
 
 print(f"""
@@ -47,7 +49,7 @@ def create_mail_tm_account(proxy=None):
         last_name = fake.last_name()
         url = "https://api.mail.tm/accounts"
         headers = {"Content-Type": "application/json"}
-        data = {"address": f"{username}@{domain}", "password":password}       
+        data = {"address": f"{username}@{domain}", "password": password}       
         try:
             response = requests.post(url, headers=headers, json=data, proxies=proxy)
             if response.status_code == 201:
@@ -58,6 +60,39 @@ def create_mail_tm_account(proxy=None):
         except Exception as e:
             print(f'[×] Error : {e}')
             return None, None, None, None, None
+
+def get_verification_code(email, password, proxy=None):
+    """Fetches the verification code from the email inbox."""
+    auth_url = "https://api.mail.tm/token"
+    auth_data = {"address": email, "password": password}
+    try:
+        auth_response = requests.post(auth_url, json=auth_data, proxies=proxy)
+        if auth_response.status_code != 200:
+            print("[×] Failed to authenticate with mail.tm")
+            return None
+        
+        token = auth_response.json().get("token")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        inbox_url = "https://api.mail.tm/messages"
+        for _ in range(10):  # Try for 10 seconds
+            inbox_response = requests.get(inbox_url, headers=headers, proxies=proxy)
+            if inbox_response.status_code == 200:
+                messages = inbox_response.json().get("hydra:member", [])
+                if messages:
+                    latest_email_id = messages[0]["id"]
+                    message_url = f"https://api.mail.tm/messages/{latest_email_id}"
+                    message_response = requests.get(message_url, headers=headers, proxies=proxy)
+                    if message_response.status_code == 200:
+                        content = message_response.json().get("text", "")
+                        code_match = re.search(r'\b\d{6}\b', content)  # Assuming a 6-digit code
+                        if code_match:
+                            return code_match.group()
+            time.sleep(2)
+    except Exception as e:
+        print(f"[×] Error fetching email: {e}")
+    
+    return None
 
 def register_facebook_account(email, password, first_name, last_name, birthday, proxy=None):
     api_key = '882a8490361da98702bf97a021ddc14d'
@@ -70,20 +105,24 @@ def register_facebook_account(email, password, first_name, last_name, birthday, 
     req['sig'] = ensig
     api_url = 'https://b-api.facebook.com/method/user.register'
     reg = _call(api_url, req, proxy)
-    id = reg['new_user_id']
-    token = reg['session_info']['access_token']
+    
+    id = reg.get('new_user_id', 'N/A')
+    token = reg.get('session_info', {}).get('access_token', 'N/A')
+
+    verification_code = get_verification_code(email, password, proxy)
+
     print(f'''
 -----------GENERATED-----------
-EMAIL : {email}
-ID : {id}
-PASSWORD : {password}
-NAME : {first_name} {last_name}
-BIRTHDAY : {birthday} 
-GENDER : {gender}
+EMAIL     : {email}
+ID        : {id}
+PASSWORD  : {password}
+NAME      : {first_name} {last_name}
+BIRTHDAY  : {birthday} 
+GENDER    : {gender}
+VERIFICATION CODE: {verification_code if verification_code else 'N/A'}
 -----------GENERATED-----------
-Token : {token}
+Token     : {token}
 -----------GENERATED-----------''')
-    open('username.txt', 'a')
 
 def _call(url, params, proxy=None, post=True):
     headers = {'User-Agent': '[FBAN/FB4A;FBAV/35.0.0.48.273;FBDM/{density=1.33125,width=800,height=1205};FBLC/en_US;FBCR/;FBPN/com.facebook.katana;FBDV/Nexus 7;FBSV/4.1.1;FBBK/0;]'}
@@ -92,20 +131,6 @@ def _call(url, params, proxy=None, post=True):
     else:
         response = requests.get(url, params=params, headers=headers, proxies=proxy)
     return response.json()
-
-def test_proxy(proxy, q, valid_proxies):
-    if test_proxy_helper(proxy):
-        valid_proxies.append(proxy)
-    q.task_done()
-
-def test_proxy_helper(proxy):
-    try:
-        response = requests.get('https://api.mail.tm', proxies=proxy, timeout=5)
-        print(f'Pass: {proxy}')
-        return response.status_code == 200
-    except:
-        print(f'Fail: {proxy}')
-        return False
 
 def load_proxies():
     with open('proxies.txt', 'r') as file:
@@ -124,7 +149,7 @@ def get_working_proxies():
         worker.daemon = True
         worker.start()
     
-    q.join()  # Block until all tasks are done
+    q.join()
     return valid_proxies
 
 def worker_test_proxy(q, valid_proxies):

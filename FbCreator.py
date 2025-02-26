@@ -11,91 +11,59 @@ from faker import Faker
 
 print(f"""
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓           
-> › Github :- @jatintiwari0 
-> › By      :- JATIN TIWARI
+> › Github :- @Xio
+> › By      :- Rey Estacio
 > › Proxy Support Added by @coopers-lab
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                """)
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                
+""")
 print('\x1b[38;5;208m⇼'*60)
 print('\x1b[38;5;22m•'*60)
 print('\x1b[38;5;22m•'*60)
 print('\x1b[38;5;208m⇼'*60)
+
+FAKE = Faker()
 
 def generate_random_string(length):
-    letters_and_digits = string.ascii_letters + string.digits
-    return ''.join(random.choice(letters_and_digits) for _ in range(length))
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-def get_mail_domains(proxy=None):
-    url = "https://api.mail.tm/domains"
-    try:
-        response = requests.get(url, proxies=proxy)
-        if response.status_code == 200:
-            return response.json().get('hydra:member', [])
-        else:
-            print(f'[×] Email Error: {response.text}')
-            return []
-    except Exception as e:
-        print(f'[×] Error: {e}')
-        return []
-
-def create_mail_tm_account(proxy=None):
-    fake = Faker()
-    mail_domains = get_mail_domains(proxy)
-    if not mail_domains:
-        return None, None, None, None, None
-
-    domain = random.choice(mail_domains)['domain']
+def create_1secmail_account():
+    """Creates a temporary email account with 1secmail."""
     username = generate_random_string(10)
-    password = fake.password()
-    birthday = fake.date_of_birth(minimum_age=18, maximum_age=45)
-    first_name = fake.first_name()
-    last_name = fake.last_name()
-    url = "https://api.mail.tm/accounts"
-    headers = {"Content-Type": "application/json"}
-    data = {"address": f"{username}@{domain}", "password": password}       
-
-    try:
-        response = requests.post(url, headers=headers, json=data, proxies=proxy)
-        if response.status_code == 201:
-            return f"{username}@{domain}", password, first_name, last_name, birthday
-        else:
-            print(f'[×] Email Creation Error: {response.text}')
-            return None, None, None, None, None
-    except Exception as e:
-        print(f'[×] Error: {e}')
-        return None, None, None, None, None
-
-def get_verification_code(email, password, proxy=None):
-    """Fetches the verification code from the email inbox."""
-    auth_url = "https://api.mail.tm/token"
-    auth_data = {"address": email, "password": password}
-
-    try:
-        auth_response = requests.post(auth_url, json=auth_data, proxies=proxy)
-        if auth_response.status_code != 200:
-            print("[×] Failed to authenticate with mail.tm")
-            return None
-        
-        token = auth_response.json().get("token")
-        headers = {"Authorization": f"Bearer {token}"}
-
-        inbox_url = "https://api.mail.tm/messages"
-        for _ in range(10):  # Try for 10 seconds
-            inbox_response = requests.get(inbox_url, headers=headers, proxies=proxy)
-            if inbox_response.status_code == 200:
-                messages = inbox_response.json().get("hydra:member", [])
-                if messages:
-                    latest_email_id = messages[0]["id"]
-                    message_url = f"https://api.mail.tm/messages/{latest_email_id}"
-                    message_response = requests.get(message_url, headers=headers, proxies=proxy)
-                    if message_response.status_code == 200:
-                        content = message_response.json().get("text", "")
-                        code_match = re.search(r'\b\d{6}\b', content)  # Assuming a 6-digit code
-                        if code_match:
-                            return code_match.group()
-            time.sleep(2)
-    except Exception as e:
-        print(f"[×] Error fetching email: {e}")
+    domains = ["1secmail.com", "1secmail.org", "1secmail.net"]
+    email = f"{username}@{random.choice(domains)}"
     
+    password = FAKE.password()
+    birthday = FAKE.date_of_birth(minimum_age=18, maximum_age=45)
+    first_name = FAKE.first_name()
+    last_name = FAKE.last_name()
+
+    return email, password, first_name, last_name, birthday
+
+def get_1secmail_verification_code(email):
+    """Fetches the verification code from 1secmail inbox."""
+    login, domain = email.split("@")
+    inbox_url = f"https://www.1secmail.com/api/v1/?action=getMessages&login={login}&domain={domain}"
+
+    for _ in range(10):  # Try for 10 seconds
+        try:
+            inbox_response = requests.get(inbox_url)
+            messages = inbox_response.json()
+            
+            if messages:
+                latest_email_id = messages[0]["id"]
+                message_url = f"https://www.1secmail.com/api/v1/?action=readMessage&login={login}&domain={domain}&id={latest_email_id}"
+                message_response = requests.get(message_url)
+                
+                if message_response.status_code == 200:
+                    content = message_response.json().get("body", "")
+                    code_match = re.search(r'\b\d{6}\b', content)  # Assuming a 6-digit code
+                    if code_match:
+                        return code_match.group()
+        except Exception as e:
+            print(f"[×] Error fetching email: {e}")
+
+        time.sleep(2)
+
     return None
 
 def register_facebook_account(email, password, first_name, last_name, birthday, proxy=None):
@@ -136,7 +104,7 @@ def register_facebook_account(email, password, first_name, last_name, birthday, 
     if id == 'REGISTRATION FAILED':
         print("[×] Facebook registration failed. Response:", reg)
 
-    verification_code = get_verification_code(email, password, proxy)
+    verification_code = get_1secmail_verification_code(email)
 
     print(f'''
 -----------GENERATED-----------
@@ -152,21 +120,29 @@ Token     : {token}
 -----------GENERATED-----------''')
 
 def _call(url, params, proxy=None, post=True):
-    headers = {'User-Agent': '[FBAN/FB4A;FBAV/35.0.0.48.273;FBDM/{density=1.33125,width=800,height=1205};FBLC/en_US;FBCR/;FBPN/com.facebook.katana;FBDV/Nexus 7;FBSV/4.1.1;FBBK/0;]'}
-    if post:
-        response = requests.post(url, data=params, headers=headers, proxies=proxy)
-    else:
-        response = requests.get(url, params=params, headers=headers, proxies=proxy)
-    return response.json()
+    headers = {
+        'User-Agent': '[FBAN/FB4A;FBAV/35.0.0.48.273;FBDM/{density=1.33125,width=800,height=1205};FBLC/en_US;FBCR/;FBPN/com.facebook.katana;FBDV/Nexus 7;FBSV/4.1.1;FBBK/0;]'
+    }
+    try:
+        response = requests.post(url, data=params, headers=headers, proxies=proxy) if post else requests.get(url, params=params, headers=headers, proxies=proxy)
+        return response.json()
+    except Exception as e:
+        print(f'[×] Error connecting to Facebook API: {e}')
+        return {}
 
 def load_proxies():
-    with open('proxies.txt', 'r') as file:
-        proxies = [line.strip() for line in file]
-    return [{'http': f'http://{proxy}'} for proxy in proxies]
+    """Loads proxies from proxies.txt file."""
+    try:
+        with open('proxies.txt', 'r') as file:
+            proxies = [line.strip() for line in file]
+        return [{'http': f'http://{proxy}'} for proxy in proxies]
+    except FileNotFoundError:
+        print('[×] No proxy file found. Running without proxies.')
+        return []
 
 def get_working_proxies():
-    proxies = load_proxies()
-    return proxies if proxies else []
+    """Returns available proxies."""
+    return load_proxies()
 
 working_proxies = get_working_proxies()
 
@@ -175,7 +151,7 @@ if not working_proxies:
 else:
     for i in range(int(input('[+] How Many Accounts You Want:  '))):
         proxy = random.choice(working_proxies)
-        email, password, first_name, last_name, birthday = create_mail_tm_account(proxy)
+        email, password, first_name, last_name, birthday = create_1secmail_account()
         if email and password and first_name and last_name and birthday:
             register_facebook_account(email, password, first_name, last_name, birthday, proxy)
 
